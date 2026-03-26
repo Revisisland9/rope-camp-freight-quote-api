@@ -34,24 +34,24 @@ class TMSClient:
         url = f"{settings.tms_base_url}/api/v1/RateShop/RateRequest"
 
         try:
-          response = requests.post(
-    url,
-    json=payload,
-    headers={
-        "ApiKey": settings.tms_api_key,
-        "UserName": settings.tms_username,
-        "Accept": "application/json",
-    },
-    timeout=settings.tms_timeout_seconds,
-)
-
-print("====== TMS RAW RESPONSE ======")
-print(response.status_code)
-print(response.text)
-print("================================")
-                
+            response = requests.post(
+                url,
+                json=payload,
+                headers={
+                    "ApiKey": settings.tms_api_key,
+                    "UserName": settings.tms_username,
+                    "Accept": "application/json",
+                },
+                timeout=settings.tms_timeout_seconds,
             )
+
+            print("====== TMS RAW RESPONSE ======")
+            print(response.status_code)
+            print(response.text)
+            print("================================")
+
             response.raise_for_status()
+
         except requests.RequestException as exc:
             raise RuntimeError(f"TMS rate request failed: {exc}") from exc
 
@@ -78,6 +78,10 @@ print("================================")
             ) from exc
 
         selected_rate = self._select_best_rate(data)
+
+        print("====== SELECTED RATE ======")
+        print(json.dumps(selected_rate, indent=2, default=str))
+        print("================================")
 
         if not selected_rate:
             return {
