@@ -12,11 +12,12 @@ class TMSClient:
         destination_zip: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
-
         if not settings.tms_base_url:
             raise RuntimeError("TMS_BASE_URL is missing.")
         if not settings.tms_username or not settings.tms_api_key:
             raise RuntimeError("TMS credentials are missing.")
+        if not shipment.get("items"):
+            raise RuntimeError("Shipment must contain at least one item.")
 
         payload = self._build_rate_request(
             origin_zip=origin_zip,
@@ -24,27 +25,36 @@ class TMSClient:
             shipment=shipment,
         )
 
-        url = f"{settings.tms_base_url.rstrip('/')}/api/v1/RateShop/RateRequest"
+        url = f"{settings.tms_base_url}/api/v1/RateShop/RateRequest"
 
-        response = requests.post(
-            url,
-            json=payload,
-            headers={
-                "ApiKey": settings.tms_api_key,
-                "UserName": settings.tms_username,
-                "Accept": "application/json",
-            },
-            timeout=settings.tms_timeout_seconds,
-        )
-        response.raise_for_status()
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers={
+                    "ApiKey": settings.tms_api_key,
+                    "UserName": settings.tms_username,
+                    "Accept": "application/json",
+                },
+                timeout=settings.tms_timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(f"TMS rate request failed: {exc}") from exc
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f"TMS returned non-JSON response: {response.text}") from exc
+
         selected_rate = self._select_best_rate(data)
 
         if not selected_rate:
             return {
+                "quote_id": None,
                 "base_rate": None,
                 "carrier": "",
+                "contract_name": "",
                 "scac": "",
                 "service": "",
                 "transit_days": None,
@@ -52,8 +62,10 @@ class TMSClient:
             }
 
         return {
+            "quote_id": selected_rate.get("Id"),
             "base_rate": self._to_float(selected_rate.get("Total")),
             "carrier": selected_rate.get("CarrierName", ""),
+            "contract_name": selected_rate.get("ContractName", ""),
             "scac": selected_rate.get("Scac", ""),
             "service": selected_rate.get("Service", ""),
             "transit_days": self._to_float(selected_rate.get("ServiceDays")),
@@ -75,26 +87,22 @@ class TMSClient:
             width = self._to_float(item.get("width"))
             height = self._to_float(item.get("height"))
 
-            item_payload: Dict[str, Any] = {
-                "Name": item.get("name") or f"Item {idx}",
-                "FreightClass": str(item.get("freight_class", "")),
-                "Weight": weight,
-                "WeightUnits": "lb",
-                "Width": width,
-                "Length": length,
-                "Height": height,
-                "DimensionUnits": "in",
-                "Quantity": pieces,
-                "QuantityUnits": "Unit",
-                "MonetaryValue": item.get("monetary_value"),
-                "Cube": item.get("cube"),
-            }
-            items.append(item_payload)
-
-        service_flags = self._build_service_flags(shipment)
-
-        pickup_date = shipment.get("pickup_date")
-        drop_date = shipment.get("drop_date")
+            items.append(
+                {
+                    "Name": item.get("name") or f"Item {idx}",
+                    "FreightClass": str(item.get("freight_class", "")),
+                    "Weight": weight,
+                    "WeightUnits": "lb",
+                    "Width": width,
+                    "Length": length,
+                    "Height": height,
+                    "DimensionUnits": "in",
+                    "Quantity": pieces,
+                    "QuantityUnits": "Unit",
+                    "MonetaryValue": item.get("monetary_value"),
+                    "Cube": item.get("cube"),
+                }
+            )
 
         payload: Dict[str, Any] = {
             "Constraints": {
@@ -104,12 +112,12 @@ class TMSClient:
                 "CarrierName": shipment.get("carrier_name"),
                 "CarrierScac": shipment.get("carrier_scac"),
                 "PaymentTerms": shipment.get("payment_terms"),
-                "ServiceFlags": service_flags,
+                "ServiceFlags": self._build_service_flags(shipment),
                 "Equipments": shipment.get("equipments"),
             },
             "Items": items,
             "PickupEvent": {
-                "Date": pickup_date,
+                "Date": shipment.get("pickup_date"),
                 "LocationCode": shipment.get("pickup_location_code"),
                 "City": shipment.get("origin_city"),
                 "State": shipment.get("origin_state"),
@@ -117,7 +125,7 @@ class TMSClient:
                 "Country": shipment.get("origin_country", "US"),
             },
             "DropEvent": {
-                "Date": drop_date,
+                "Date": shipment.get("drop_date"),
                 "LocationCode": shipment.get("drop_location_code"),
                 "City": shipment.get("destination_city"),
                 "State": shipment.get("destination_state"),
@@ -128,7 +136,9 @@ class TMSClient:
             "RatingLevel": shipment.get("rating_level"),
             "RatingCount": shipment.get("rating_count"),
             "LinearFeet": shipment.get("linear_feet"),
-            "ReturnAssociatedCarrierPricesheet": shipment.get("return_associated_carrier_pricesheet"),
+            "ReturnAssociatedCarrierPricesheet": shipment.get(
+                "return_associated_carrier_pricesheet"
+            ),
             "MaxPriceSheet": shipment.get("max_price_sheet"),
             "ShowInsurance": shipment.get("show_insurance", True),
             "ShipmentValue": shipment.get("shipment_value"),
@@ -168,25 +178,33 @@ class TMSClient:
         if not isinstance(data, list) or not data:
             return None
 
-        explicitly_selected = [r for r in data if r.get("IsSelected") is True]
+        explicitly_selected = [rate for rate in data if rate.get("IsSelected") is True]
         if explicitly_selected:
             return min(
                 explicitly_selected,
-                key=lambda r: (
-                    self._to_float(r.get("Total")) if self._to_float(r.get("Total")) is not None else float("inf"),
-                    self._to_float(r.get("ServiceDays")) if self._to_float(r.get("ServiceDays")) is not None else float("inf"),
+                key=lambda rate: (
+                    self._to_float(rate.get("Total"))
+                    if self._to_float(rate.get("Total")) is not None
+                    else float("inf"),
+                    self._to_float(rate.get("ServiceDays"))
+                    if self._to_float(rate.get("ServiceDays")) is not None
+                    else float("inf"),
                 ),
             )
 
-        valid_rates = [r for r in data if self._to_float(r.get("Total")) is not None]
+        valid_rates = [rate for rate in data if self._to_float(rate.get("Total")) is not None]
         if not valid_rates:
             return None
 
         return min(
             valid_rates,
-            key=lambda r: (
-                self._to_float(r.get("Total")) if self._to_float(r.get("Total")) is not None else float("inf"),
-                self._to_float(r.get("ServiceDays")) if self._to_float(r.get("ServiceDays")) is not None else float("inf"),
+            key=lambda rate: (
+                self._to_float(rate.get("Total"))
+                if self._to_float(rate.get("Total")) is not None
+                else float("inf"),
+                self._to_float(rate.get("ServiceDays"))
+                if self._to_float(rate.get("ServiceDays")) is not None
+                else float("inf"),
             ),
         )
 
@@ -197,31 +215,6 @@ class TMSClient:
             return float(value)
         except (TypeError, ValueError):
             return None
-
-    def _mock_rate(
-        self,
-        origin_zip: str,
-        destination_zip: str,
-        shipment: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        total_weight = float(shipment.get("total_weight", 0))
-        total_pieces = int(shipment.get("total_pieces", 0))
-        overlength_count = sum(1 for x in shipment.get("items", []) if x.get("overlength_tier"))
-
-        base_rate = 250 + (total_weight * 0.58) + (total_pieces * 35) + (overlength_count * 85)
-
-        return {
-            "base_rate": round(base_rate, 2),
-            "carrier": "MOCK CARRIER",
-            "scac": "MOCK",
-            "service": "LTL",
-            "transit_days": 3,
-            "raw": {
-                "origin_zip": origin_zip,
-                "destination_zip": destination_zip,
-                "total_weight": total_weight,
-            },
-        }
 
 
 tms_client = TMSClient()
