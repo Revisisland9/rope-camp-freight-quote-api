@@ -25,7 +25,11 @@ class TMSClient:
             destination_zip=destination_zip,
             shipment=shipment,
         )
+import json
 
+print("====== TMS RATE REQUEST PAYLOAD ======")
+print(json.dumps(payload, indent=2))
+print("======================================")
         url = f"{settings.tms_base_url}/api/v1/RateShop/RateRequest"
 
         try:
