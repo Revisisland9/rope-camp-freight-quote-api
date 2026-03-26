@@ -61,8 +61,10 @@ class CatalogService:
             spreadsheet = client.open_by_key(settings.google_sheet_id)
         except Exception as exc:
             raise RuntimeError(
-                "Unable to open Google Sheet by key. Check GOOGLE_SHEET_ID and make sure "
-                "the Google Sheet is shared with the Cloud Run service account."
+                f"Unable to open Google Sheet by key. "
+                f"sheet_id={settings.google_sheet_id!r}; "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
             ) from exc
 
         try:
@@ -71,8 +73,12 @@ class CatalogService:
             inputs_ws = spreadsheet.worksheet(settings.tab_inputs)
         except Exception as exc:
             raise RuntimeError(
-                "Unable to open one or more required worksheet tabs. Check the configured "
-                "tab names in settings and confirm the tabs exist in the shared sheet."
+                f"Unable to open one or more required worksheet tabs. "
+                f"tab_sku_xref={settings.tab_sku_xref!r}; "
+                f"tab_rc_master={settings.tab_rc_master!r}; "
+                f"tab_inputs={settings.tab_inputs!r}; "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
             ) from exc
 
         sku_xref_rows = self._load_sku_xref(sku_xref_ws)
@@ -88,17 +94,26 @@ class CatalogService:
 
     def _build_gspread_client(self) -> gspread.Client:
         try:
-            creds, _ = google_auth_default(scopes=GOOGLE_SCOPES)
+            creds, project_id = google_auth_default(scopes=GOOGLE_SCOPES)
             return gspread.authorize(creds)
         except Exception as exc:
             raise RuntimeError(
-                "Could not create Google Sheets client from default credentials. "
-                "Make sure the Cloud Run service account is attached correctly and the "
-                "sheet is shared with that service account email."
+                f"Could not create Google Sheets client from default credentials. "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
             ) from exc
 
     def _load_sku_xref(self, worksheet: gspread.Worksheet) -> List[Dict[str, Any]]:
-        raw = worksheet.get_all_records(default_blank="")
+        try:
+            raw = worksheet.get_all_records(default_blank="")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed reading SKU XREF worksheet. "
+                f"worksheet={worksheet.title!r}; "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
+            ) from exc
+
         rows: List[Dict[str, Any]] = []
 
         for row in raw:
@@ -126,7 +141,16 @@ class CatalogService:
         return rows
 
     def _load_rc_master(self, worksheet: gspread.Worksheet) -> List[Dict[str, Any]]:
-        raw = worksheet.get_all_records(default_blank="")
+        try:
+            raw = worksheet.get_all_records(default_blank="")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed reading RC MASTER worksheet. "
+                f"worksheet={worksheet.title!r}; "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
+            ) from exc
+
         rows: List[Dict[str, Any]] = []
 
         for row in raw:
@@ -154,7 +178,16 @@ class CatalogService:
         return rows
 
     def _load_inputs(self, worksheet: gspread.Worksheet) -> Dict[str, Any]:
-        raw = worksheet.get_all_records(default_blank="")
+        try:
+            raw = worksheet.get_all_records(default_blank="")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed reading INPUTS worksheet. "
+                f"worksheet={worksheet.title!r}; "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
+            ) from exc
+
         inputs_map: Dict[str, Any] = {}
 
         for row in raw:
@@ -167,10 +200,18 @@ class CatalogService:
 
             inputs_map[setting] = value
 
-        require_value(inputs_map, "Uplift Percentage")
-        require_value(inputs_map, "Flat Min. y/n")
-        require_value(inputs_map, "Flat Min Value")
-        require_value(inputs_map, "Min % MSRP")
+        try:
+            require_value(inputs_map, "Uplift Percentage")
+            require_value(inputs_map, "Flat Min. y/n")
+            require_value(inputs_map, "Flat Min Value")
+            require_value(inputs_map, "Min % MSRP")
+        except Exception as exc:
+            raise RuntimeError(
+                f"Required Inputs settings missing or blank. "
+                f"found_keys={sorted(inputs_map.keys())}; "
+                f"exc_type={type(exc).__name__}; "
+                f"exc={exc}"
+            ) from exc
 
         inputs_map["_parsed"] = {
             "uplift_percentage": parse_percentage(inputs_map["Uplift Percentage"]),
