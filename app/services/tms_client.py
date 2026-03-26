@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -78,14 +79,29 @@ class TMSClient:
         destination_zip: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
+        now = datetime.now()
+        pickup_dt = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        drop_dt = (pickup_dt + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+
+        pickup_date_str = pickup_dt.strftime("%m/%d/%Y %H:%M")
+        drop_date_str = drop_dt.strftime("%m/%d/%Y %H:%M")
+
         items: List[Dict[str, Any]] = []
 
         for idx, item in enumerate(shipment.get("items", []), start=1):
-            pieces = self._to_float(item.get("pieces")) or 1.0
-            weight = self._to_float(item.get("weight")) or 0.0
+            pieces_float = self._to_float(item.get("pieces")) or 1.0
+            weight_float = self._to_float(item.get("weight")) or 0.0
             length = self._to_float(item.get("length"))
             width = self._to_float(item.get("width"))
             height = self._to_float(item.get("height"))
+
+            pieces = int(round(pieces_float))
+            if pieces < 1:
+                pieces = 1
+
+            weight = int(round(weight_float))
+            if weight < 0:
+                weight = 0
 
             items.append(
                 {
@@ -104,6 +120,11 @@ class TMSClient:
                 }
             )
 
+        total_weight_float = self._to_float(shipment.get("total_weight")) or 0.0
+        total_weight = int(round(total_weight_float))
+        if total_weight < 0:
+            total_weight = 0
+
         payload: Dict[str, Any] = {
             "Constraints": {
                 "Mode": shipment.get("mode"),
@@ -117,15 +138,15 @@ class TMSClient:
             },
             "Items": items,
             "PickupEvent": {
-                "Date": shipment.get("pickup_date"),
+                "Date": pickup_date_str,
                 "LocationCode": shipment.get("pickup_location_code"),
-                "City": shipment.get("origin_city"),
-                "State": shipment.get("origin_state"),
+                "City": "PickCity",
+                "State": "PickState",
                 "Zip": origin_zip,
                 "Country": shipment.get("origin_country", "US"),
             },
             "DropEvent": {
-                "Date": shipment.get("drop_date"),
+                "Date": drop_date_str,
                 "LocationCode": shipment.get("drop_location_code"),
                 "City": shipment.get("destination_city"),
                 "State": shipment.get("destination_state"),
@@ -142,7 +163,7 @@ class TMSClient:
             "MaxPriceSheet": shipment.get("max_price_sheet"),
             "ShowInsurance": shipment.get("show_insurance", True),
             "ShipmentValue": shipment.get("shipment_value"),
-            "Weight": shipment.get("total_weight"),
+            "Weight": total_weight,
             "Stops": shipment.get("stops"),
         }
 
