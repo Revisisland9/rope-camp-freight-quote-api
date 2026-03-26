@@ -18,6 +18,7 @@ from app.util.helpers import (
 
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
 ]
 
 
