@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+import json
 
 import requests
 
@@ -25,11 +26,11 @@ class TMSClient:
             destination_zip=destination_zip,
             shipment=shipment,
         )
-import json
 
-print("====== TMS RATE REQUEST PAYLOAD ======")
-print(json.dumps(payload, indent=2))
-print("======================================")
+        print("====== TMS RATE REQUEST PAYLOAD ======")
+        print(json.dumps(payload, indent=2))
+        print("======================================")
+
         url = f"{settings.tms_base_url}/api/v1/RateShop/RateRequest"
 
         try:
@@ -47,10 +48,27 @@ print("======================================")
         except requests.RequestException as exc:
             raise RuntimeError(f"TMS rate request failed: {exc}") from exc
 
+        if response.status_code == 204 or not response.text or not response.text.strip():
+            return {
+                "quote_id": None,
+                "base_rate": None,
+                "carrier": "",
+                "contract_name": "",
+                "scac": "",
+                "service": "",
+                "transit_days": None,
+                "raw": [],
+            }
+
         try:
             data = response.json()
         except ValueError as exc:
-            raise RuntimeError(f"TMS returned non-JSON response: {response.text}") from exc
+            raise RuntimeError(
+                f"TMS returned non-JSON response: "
+                f"status_code={response.status_code}; "
+                f"content_type={response.headers.get('Content-Type')!r}; "
+                f"body={response.text!r}"
+            ) from exc
 
         selected_rate = self._select_best_rate(data)
 
