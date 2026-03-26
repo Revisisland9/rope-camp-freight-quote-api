@@ -148,8 +148,8 @@ class TMSClient:
             "DropEvent": {
                 "Date": drop_date_str,
                 "LocationCode": shipment.get("drop_location_code"),
-                "City": shipment.get("destination_city"),
-                "State": shipment.get("destination_state"),
+                "City": "DropCity",
+                "State": "DropState",
                 "Zip": destination_zip,
                 "Country": shipment.get("destination_country", "US"),
             },
