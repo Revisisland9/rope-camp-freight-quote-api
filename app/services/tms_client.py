@@ -155,7 +155,7 @@ class TMSClient:
                 "CarrierName": shipment.get("carrier_name"),
                 "CarrierScac": shipment.get("carrier_scac"),
                 "PaymentTerms": shipment.get("payment_terms"),
-                "ServiceFlags": self._build_service_flags(shipment),
+                "ServiceFlags": [],
                 "Equipments": shipment.get("equipments"),
             },
             "Items": items,
