@@ -12,12 +12,6 @@ class TMSClient:
         destination_zip: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if settings.tms_use_mock:
-            return self._mock_rate(
-                origin_zip=origin_zip,
-                destination_zip=destination_zip,
-                shipment=shipment,
-            )
 
         if not settings.tms_base_url:
             raise RuntimeError("TMS_BASE_URL is missing.")
