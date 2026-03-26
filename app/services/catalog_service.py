@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 
 import gspread
 from google.auth import default as google_auth_default
-from google.oauth2.service_account import Credentials
 
 from app.config import settings
 from app.util.helpers import (
@@ -16,7 +15,6 @@ from app.util.helpers import (
     parse_percentage,
     require_value,
 )
-
 
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -49,7 +47,8 @@ class CatalogService:
             not force
             and self._catalog is not None
             and self._last_refresh is not None
-            and (now - self._last_refresh).total_seconds() < settings.catalog_refresh_ttl_seconds
+            and (now - self._last_refresh).total_seconds()
+            < settings.catalog_refresh_ttl_seconds
         ):
             return
 
@@ -57,11 +56,28 @@ class CatalogService:
             raise RuntimeError("GOOGLE_SHEET_ID is missing.")
 
         client = self._build_gspread_client()
-        spreadsheet = client.open_by_key(settings.google_sheet_id)
 
-        sku_xref_rows = self._load_sku_xref(spreadsheet.worksheet(settings.tab_sku_xref))
-        rc_master_rows = self._load_rc_master(spreadsheet.worksheet(settings.tab_rc_master))
-        inputs_map = self._load_inputs(spreadsheet.worksheet(settings.tab_inputs))
+        try:
+            spreadsheet = client.open_by_key(settings.google_sheet_id)
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to open Google Sheet by key. Check GOOGLE_SHEET_ID and make sure "
+                "the Google Sheet is shared with the Cloud Run service account."
+            ) from exc
+
+        try:
+            sku_xref_ws = spreadsheet.worksheet(settings.tab_sku_xref)
+            rc_master_ws = spreadsheet.worksheet(settings.tab_rc_master)
+            inputs_ws = spreadsheet.worksheet(settings.tab_inputs)
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to open one or more required worksheet tabs. Check the configured "
+                "tab names in settings and confirm the tabs exist in the shared sheet."
+            ) from exc
+
+        sku_xref_rows = self._load_sku_xref(sku_xref_ws)
+        rc_master_rows = self._load_rc_master(rc_master_ws)
+        inputs_map = self._load_inputs(inputs_ws)
 
         self._catalog = {
             "sku_xref_rows": sku_xref_rows,
@@ -71,23 +87,15 @@ class CatalogService:
         self._last_refresh = now
 
     def _build_gspread_client(self) -> gspread.Client:
-        service_account_info = settings.service_account_info()
-        if service_account_info:
-            creds = Credentials.from_service_account_info(
-                service_account_info,
-                scopes=GOOGLE_SCOPES,
-            )
+        try:
+            creds, _ = google_auth_default(scopes=GOOGLE_SCOPES)
             return gspread.authorize(creds)
-
-        if settings.google_service_account_file:
-            creds = Credentials.from_service_account_file(
-                settings.google_service_account_file,
-                scopes=GOOGLE_SCOPES,
-            )
-            return gspread.authorize(creds)
-
-        creds, _ = google_auth_default(scopes=GOOGLE_SCOPES)
-        return gspread.authorize(creds)
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not create Google Sheets client from default credentials. "
+                "Make sure the Cloud Run service account is attached correctly and the "
+                "sheet is shared with that service account email."
+            ) from exc
 
     def _load_sku_xref(self, worksheet: gspread.Worksheet) -> List[Dict[str, Any]]:
         raw = worksheet.get_all_records(default_blank="")
