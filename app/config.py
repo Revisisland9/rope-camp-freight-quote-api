@@ -17,7 +17,6 @@ class Settings:
     tms_username: str = os.getenv("TMS_USERNAME", "")
     tms_api_key: str = os.getenv("TMS_API_KEY", "")
     tms_timeout_seconds: int = int(os.getenv("TMS_TIMEOUT_SECONDS", "30"))
-    tms_use_mock: bool = os.getenv("TMS_USE_MOCK", "true").lower() == "true"
 
     # Email
     smtp_host: str = os.getenv("SMTP_HOST", "")
