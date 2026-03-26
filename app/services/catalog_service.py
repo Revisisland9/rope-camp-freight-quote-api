@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import gspread
+from google.auth import default as google_auth_default
 from google.oauth2.service_account import Credentials
 
 from app.config import settings
@@ -51,6 +52,9 @@ class CatalogService:
         ):
             return
 
+        if not settings.google_sheet_id:
+            raise RuntimeError("GOOGLE_SHEET_ID is missing.")
+
         client = self._build_gspread_client()
         spreadsheet = client.open_by_key(settings.google_sheet_id)
 
@@ -81,9 +85,9 @@ class CatalogService:
             )
             return gspread.authorize(creds)
 
-        raise RuntimeError(
-            "Google credentials missing. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE."
-        )
+        # Cloud Run / Application Default Credentials fallback
+        creds, _ = google_auth_default(scopes=GOOGLE_SCOPES)
+        return gspread.authorize(creds)
 
     def _load_sku_xref(self, worksheet: gspread.Worksheet) -> List[Dict[str, Any]]:
         raw = worksheet.get_all_records(default_blank="")
