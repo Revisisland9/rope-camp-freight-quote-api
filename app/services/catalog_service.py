@@ -44,6 +44,7 @@ class CatalogService:
 
     def refresh(self, force: bool = False) -> None:
         now = datetime.now(timezone.utc)
+
         if (
             not force
             and self._catalog is not None
@@ -85,7 +86,6 @@ class CatalogService:
             )
             return gspread.authorize(creds)
 
-        # Cloud Run / Application Default Credentials fallback
         creds, _ = google_auth_default(scopes=GOOGLE_SCOPES)
         return gspread.authorize(creds)
 
@@ -103,8 +103,12 @@ class CatalogService:
                 {
                     "rc_product_number": rc_product_number,
                     "gametime": str(normalized.get("GameTime", "")).strip(),
-                    "park_and_play_structures": str(normalized.get("Park and Play Structures", "")).strip(),
-                    "superior_recreational_products": str(normalized.get("Superior Recreational Products", "")).strip(),
+                    "park_and_play_structures": str(
+                        normalized.get("Park and Play Structures", "")
+                    ).strip(),
+                    "superior_recreational_products": str(
+                        normalized.get("Superior Recreational Products", "")
+                    ).strip(),
                     "playcraft": str(normalized.get("Playcraft", "")).strip(),
                     "msrp": parse_currency(normalized.get("MSRP", 0)),
                     "active": normalize_bool(normalized.get("Active", True)),
