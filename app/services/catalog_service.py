@@ -95,7 +95,7 @@ class CatalogService:
 
     def _build_gspread_client(self) -> gspread.Client:
         try:
-            creds, project_id = google_auth_default(scopes=GOOGLE_SCOPES)
+            creds, _ = google_auth_default(scopes=GOOGLE_SCOPES)
             return gspread.authorize(creds)
         except Exception as exc:
             raise RuntimeError(
@@ -203,7 +203,6 @@ class CatalogService:
 
         try:
             require_value(inputs_map, "Uplift Percentage")
-            require_value(inputs_map, "Flat Min. y/n")
             require_value(inputs_map, "Flat Min Value")
             require_value(inputs_map, "Min % MSRP")
         except Exception as exc:
@@ -214,10 +213,12 @@ class CatalogService:
                 f"exc={exc}"
             ) from exc
 
+        flat_min_value = parse_currency(inputs_map.get("Flat Min Value", 0)) or 0.0
+
         inputs_map["_parsed"] = {
             "uplift_percentage": parse_percentage(inputs_map["Uplift Percentage"]),
-            "flat_min_enabled": normalize_bool(inputs_map["Flat Min. y/n"]),
-            "flat_min_value": parse_currency(inputs_map["Flat Min Value"]),
+            "flat_min_enabled": flat_min_value > 0,
+            "flat_min_value": flat_min_value,
             "min_pct_msrp": parse_percentage(inputs_map["Min % MSRP"]),
         }
 
