@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -14,3 +14,5 @@ class QuoteResponse(BaseModel):
     tms: Dict[str, Any]
     pricing: Dict[str, Any]
     emailed_to: List[str] = []
+    quote_number: Optional[str] = None
+    email_error: Optional[str] = None
