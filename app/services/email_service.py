@@ -11,9 +11,32 @@ class EmailService:
         raw = inputs_map.get("Quote Email Recipients", "")
         return parse_email_list(raw)
 
+    def get_recipients(
+        self,
+        email_to: str = "",
+        inputs_map: Dict[str, Any] | None = None,
+    ) -> List[str]:
+        explicit = parse_email_list(email_to)
+
+        fallback: List[str] = []
+        if inputs_map:
+            fallback = self.get_recipients_from_inputs(inputs_map)
+
+        recipients: List[str] = []
+        seen = set()
+
+        for email in explicit + fallback:
+            key = email.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                recipients.append(email.strip())
+
+        return recipients
+
     def send_quote_email(
         self,
         recipients: List[str],
+        quote_number: str,
         company: str,
         sku: str,
         destination_zip: str,
@@ -21,6 +44,9 @@ class EmailService:
         rc_product_number: str,
         shipment: Dict[str, Any],
         priced_result: Dict[str, Any],
+        customer_name: str = "",
+        rep_name: str = "",
+        project_name: str = "",
     ) -> None:
         if not recipients:
             return
@@ -30,16 +56,21 @@ class EmailService:
                 "SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, and EMAIL_FROM."
             )
 
-        subject = f"Rope Camp Freight Quote — {company} {sku} → {destination_zip}"
+        subject = f"Rope Camp Freight Quote {quote_number} — {company} {sku} → {destination_zip}"
 
         body = (
+            f"Quote Number: {quote_number}\n\n"
+            f"Customer Name: {customer_name}\n"
+            f"Rep Name: {rep_name}\n"
+            f"Project Name: {project_name}\n\n"
             f"Origin ZIP: {origin_zip}\n"
             f"Destination ZIP: {destination_zip}\n\n"
             f"Company: {company}\n"
             f"SKU: {sku}\n"
             f"RC Product Number: {rc_product_number}\n\n"
-            f"Shipment Pieces: {shipment['total_pieces']}\n"
-            f"Total Weight: {shipment['total_weight']} lbs\n"
+            f"Pieces per Unit: {shipment.get('pieces_per_unit', '')}\n"
+            f"Shipment Pieces: {shipment.get('total_pieces', '')}\n"
+            f"Total Weight: {shipment.get('total_weight', '')} lbs\n\n"
             f"Carrier: {priced_result.get('carrier', '')}\n"
             f"Service: {priced_result.get('service', '')}\n"
             f"Transit Days: {priced_result.get('transit_days', '')}\n\n"
