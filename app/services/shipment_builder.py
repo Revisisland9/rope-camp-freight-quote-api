@@ -19,9 +19,11 @@ def build_shipment(
     items: List[Dict[str, Any]] = []
     total_weight = 0.0
     total_pieces = 0
+    pieces_per_unit = 0
 
     for row in matching_rows:
-        pieces = int(row["pieces"]) * quantity
+        row_pieces = int(row["pieces"])
+        pieces = row_pieces * quantity
         weight = float(row["weight"]) * quantity
 
         item = {
@@ -38,10 +40,12 @@ def build_shipment(
         items.append(item)
         total_weight += weight
         total_pieces += pieces
+        pieces_per_unit += row_pieces
 
     return {
         "rc_product_number": rc_product_number,
         "quantity": quantity,
+        "pieces_per_unit": pieces_per_unit,
         "total_weight": round(total_weight, 2),
         "total_pieces": total_pieces,
         "items": items,
