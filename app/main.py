@@ -70,11 +70,21 @@ def quote(request: QuoteRequest) -> QuoteResponse:
         )
 
         recipients = []
-        if request.send_email:
-            recipients = email_service.get_recipients_from_inputs(catalog["inputs_map"])
-            if recipients:
+        email_error = None
+
+        # New behavior:
+        # 1. Use entered email_to from the frontend
+        # 2. Fall back to catalog inputs if needed
+        recipients = email_service.get_recipients(
+            email_to=request.email_to,
+            inputs_map=catalog["inputs_map"],
+        )
+
+        if recipients:
+            try:
                 email_service.send_quote_email(
                     recipients=recipients,
+                    quote_number=request.quote_number,
                     company=request.company,
                     sku=request.sku,
                     destination_zip=request.destination_zip,
@@ -82,7 +92,12 @@ def quote(request: QuoteRequest) -> QuoteResponse:
                     rc_product_number=sku_row["rc_product_number"],
                     shipment=shipment,
                     priced_result=priced,
+                    customer_name=request.customer_name,
+                    rep_name=request.rep_name,
+                    project_name=request.project_name,
                 )
+            except Exception as exc:
+                email_error = str(exc)
 
         return QuoteResponse(
             ok=True,
@@ -96,6 +111,8 @@ def quote(request: QuoteRequest) -> QuoteResponse:
             tms=tms_result,
             pricing=priced,
             emailed_to=recipients,
+            quote_number=request.quote_number,
+            email_error=email_error,
         )
 
     except HTTPException:
