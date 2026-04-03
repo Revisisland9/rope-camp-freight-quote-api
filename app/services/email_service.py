@@ -71,9 +71,6 @@ class EmailService:
             f"Pieces per Unit: {shipment.get('pieces_per_unit', '')}\n"
             f"Shipment Pieces: {shipment.get('total_pieces', '')}\n"
             f"Total Weight: {shipment.get('total_weight', '')} lbs\n\n"
-            f"Carrier: {priced_result.get('carrier', '')}\n"
-            f"Service: {priced_result.get('service', '')}\n"
-            f"Transit Days: {priced_result.get('transit_days', '')}\n\n"
             f"Quoted Freight: ${priced_result['final_quote']:.2f}\n"
         )
 
