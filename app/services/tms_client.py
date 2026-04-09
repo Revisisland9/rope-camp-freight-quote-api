@@ -6,12 +6,23 @@ import requests
 from app.config import settings
 
 
-class TMSClient:
+ORIGIN_MAP = {
+    "US": {
+        "zip": "90810",
+        "country": "US",
+    },
+    "CAN": {
+        "zip": "V6C3T4",
+        "country": "Canada",
+    },
+}
 
+
+class TMSClient:
     def get_rate(
         self,
-        origin_zip: str,
-        destination_zip: str,
+        origin_mode: str,
+        destination_code: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
 
@@ -25,8 +36,8 @@ class TMSClient:
             raise RuntimeError("Shipment must contain at least one item.")
 
         payload = self._build_rate_request(
-            origin_zip=origin_zip,
-            destination_zip=destination_zip,
+            origin_mode=origin_mode,
+            destination_code=destination_code,
             shipment=shipment,
         )
 
@@ -43,13 +54,11 @@ class TMSClient:
                 },
                 timeout=settings.tms_timeout_seconds,
             )
-
             response.raise_for_status()
 
         except requests.RequestException as exc:
             raise RuntimeError(f"TMS rate request failed: {exc}") from exc
 
-        # Handle empty responses
         if response.status_code == 204 or not response.text or not response.text.strip():
             return {
                 "quote_id": None,
@@ -96,10 +105,14 @@ class TMSClient:
 
     def _build_rate_request(
         self,
-        origin_zip: str,
-        destination_zip: str,
+        origin_mode: str,
+        destination_code: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
+
+        origin = self._get_origin(origin_mode)
+        destination_zip = self._normalize_location_code(destination_code)
+        destination_country = self._detect_country_from_code(destination_zip)
 
         now = datetime.now()
         pickup_dt = now.replace(hour=8, minute=0, second=0, microsecond=0)
@@ -111,7 +124,6 @@ class TMSClient:
         items: List[Dict[str, Any]] = []
 
         for idx, item in enumerate(shipment.get("items", []), start=1):
-
             pieces = int(round(self._to_float(item.get("pieces")) or 1))
             weight = int(round(self._to_float(item.get("weight")) or 0))
 
@@ -121,7 +133,7 @@ class TMSClient:
 
             items.append(
                 {
-                    "Name": item.get("name") or f"Item {idx}",
+                    "Name": item.get("component") or f"Item {idx}",
                     "FreightClass": str(item.get("freight_class", "")),
                     "Weight": weight,
                     "WeightUnits": "lb",
@@ -142,23 +154,50 @@ class TMSClient:
                 "Date": pickup_date_str,
                 "City": "PickCity",
                 "State": "PickState",
-                "Zip": origin_zip,
-                "Country": "US",
+                "Zip": origin["zip"],
+                "Country": origin["country"],
             },
             "DropEvent": {
                 "Date": drop_date_str,
                 "City": "DropCity",
                 "State": "DropState",
                 "Zip": destination_zip,
-                "Country": "US",
+                "Country": destination_country,
             },
             "Weight": total_weight,
         }
 
         return payload
 
-    def _select_best_rate(self, data: Any) -> Optional[Dict[str, Any]]:
+    def _get_origin(self, origin_mode: str) -> Dict[str, str]:
+        mode = str(origin_mode or "").strip().upper()
 
+        if mode not in ORIGIN_MAP:
+            allowed = ", ".join(ORIGIN_MAP.keys())
+            raise RuntimeError(f"Unsupported origin mode '{origin_mode}'. Allowed values: {allowed}")
+
+        return ORIGIN_MAP[mode]
+
+    def _normalize_location_code(self, code: str) -> str:
+        cleaned = str(code or "").strip().upper().replace(" ", "")
+        if not cleaned:
+            raise RuntimeError("Destination code is required.")
+        return cleaned
+
+    def _detect_country_from_code(self, code: str) -> str:
+        first_char = code[0]
+
+        if first_char.isalpha():
+            return "Canada"
+
+        if first_char.isdigit():
+            return "US"
+
+        raise RuntimeError(
+            f"Could not determine destination country from destination code '{code}'."
+        )
+
+    def _select_best_rate(self, data: Any) -> Optional[Dict[str, Any]]:
         if not isinstance(data, list) or not data:
             return None
 
@@ -179,7 +218,6 @@ class TMSClient:
         )
 
     def _to_float(self, value: Any) -> Optional[float]:
-
         if value in (None, ""):
             return None
 
