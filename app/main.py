@@ -63,8 +63,8 @@ def quote(request: QuoteRequest) -> QuoteResponse:
         )
 
         tms_result = tms_client.get_rate(
-            origin_zip=request.origin_zip,
-            destination_zip=request.destination_zip,
+            origin_mode=request.origin_mode,
+            destination_code=request.destination_code,
             shipment=shipment,
         )
 
@@ -74,13 +74,12 @@ def quote(request: QuoteRequest) -> QuoteResponse:
             inputs_map=catalog["inputs_map"],
         )
 
-        recipients = []
-        email_error = None
-
         recipients = email_service.get_recipients(
             email_to=request.email_to,
             inputs_map=catalog["inputs_map"],
         )
+
+        email_error = None
 
         if recipients:
             try:
@@ -89,8 +88,8 @@ def quote(request: QuoteRequest) -> QuoteResponse:
                     quote_number=request.quote_number,
                     company=request.company,
                     sku=", ".join(normalized_skus),
-                    destination_zip=request.destination_zip,
-                    origin_zip=request.origin_zip,
+                    destination_zip=request.destination_code,
+                    origin_zip=request.origin_mode,
                     rc_product_number=", ".join(rc_product_numbers),
                     shipment=shipment,
                     priced_result=priced,
@@ -106,8 +105,8 @@ def quote(request: QuoteRequest) -> QuoteResponse:
             company=request.company,
             skus=normalized_skus,
             rc_product_numbers=rc_product_numbers,
-            destination_zip=request.destination_zip,
-            origin_zip=request.origin_zip,
+            destination_zip=request.destination_code,
+            origin_zip=request.origin_mode,
             shipment=shipment,
             tms=tms_result,
             pricing=priced,
