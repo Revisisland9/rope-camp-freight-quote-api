@@ -5,7 +5,7 @@ from app.config import settings
 from app.models.request_models import QuoteRequest
 from app.models.response_models import QuoteResponse
 from app.services.catalog_service import catalog_service
-from app.services.sku_lookup import resolve_rc_product
+from app.services.sku_lookup import resolve_rc_products
 from app.services.shipment_builder import build_shipment
 from app.services.tms_client import tms_client
 from app.services.pricing_engine import apply_pricing_logic
@@ -42,19 +42,24 @@ def quote(request: QuoteRequest) -> QuoteResponse:
     try:
         catalog = catalog_service.get_catalog()
 
-        sku_row = resolve_rc_product(
+        resolved = resolve_rc_products(
             sku_xref_rows=catalog["sku_xref_rows"],
             company=request.company,
-            sku=request.sku,
+            skus=request.skus,
         )
 
-        if not sku_row["active"]:
-            raise HTTPException(status_code=400, detail="Selected SKU is inactive.")
+        resolved_rows = resolved["resolved_rows"]
+        rc_product_numbers = resolved["rc_product_numbers"]
+        normalized_skus = resolved["skus"]
+
+        total_msrp = sum(
+            float(row_info["row"].get("msrp", 0) or 0)
+            for row_info in resolved_rows
+        )
 
         shipment = build_shipment(
             rc_master_rows=catalog["rc_master_rows"],
-            rc_product_number=sku_row["rc_product_number"],
-            quantity=request.quantity,
+            rc_product_numbers=rc_product_numbers,
         )
 
         tms_result = tms_client.get_rate(
@@ -65,16 +70,13 @@ def quote(request: QuoteRequest) -> QuoteResponse:
 
         priced = apply_pricing_logic(
             tms_result=tms_result,
-            msrp=sku_row["msrp"],
+            msrp=total_msrp,
             inputs_map=catalog["inputs_map"],
         )
 
         recipients = []
         email_error = None
 
-        # New behavior:
-        # 1. Use entered email_to from the frontend
-        # 2. Fall back to catalog inputs if needed
         recipients = email_service.get_recipients(
             email_to=request.email_to,
             inputs_map=catalog["inputs_map"],
@@ -86,10 +88,10 @@ def quote(request: QuoteRequest) -> QuoteResponse:
                     recipients=recipients,
                     quote_number=request.quote_number,
                     company=request.company,
-                    sku=request.sku,
+                    sku=", ".join(normalized_skus),
                     destination_zip=request.destination_zip,
                     origin_zip=request.origin_zip,
-                    rc_product_number=sku_row["rc_product_number"],
+                    rc_product_number=", ".join(rc_product_numbers),
                     shipment=shipment,
                     priced_result=priced,
                     customer_name=request.customer_name,
@@ -102,11 +104,10 @@ def quote(request: QuoteRequest) -> QuoteResponse:
         return QuoteResponse(
             ok=True,
             company=request.company,
-            sku=request.sku,
-            rc_product_number=sku_row["rc_product_number"],
+            skus=normalized_skus,
+            rc_product_numbers=rc_product_numbers,
             destination_zip=request.destination_zip,
             origin_zip=request.origin_zip,
-            quantity=request.quantity,
             shipment=shipment,
             tms=tms_result,
             pricing=priced,
