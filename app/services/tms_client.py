@@ -1,19 +1,26 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+import json
+import logging
 import requests
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
 ORIGIN_MAP = {
     "US": {
         "zip": "90810",
         "country": "US",
+        "city": "PickCity",
+        "state": "PickState",
     },
     "CAN": {
         "zip": "V6C3T4",
         "country": "Canada",
+        "city": "PickCity",
+        "state": "PickState",
     },
 }
 
@@ -25,7 +32,6 @@ class TMSClient:
         destination_code: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
-
         if not settings.tms_base_url:
             raise RuntimeError("TMS_BASE_URL is missing.")
 
@@ -43,6 +49,9 @@ class TMSClient:
 
         url = f"{settings.tms_base_url}/api/v1/RateShop/RateRequest"
 
+        logger.info("TMS RATE REQUEST URL: %s", url)
+        logger.info("TMS RATE REQUEST PAYLOAD: %s", json.dumps(payload))
+
         try:
             response = requests.post(
                 url,
@@ -54,10 +63,27 @@ class TMSClient:
                 },
                 timeout=settings.tms_timeout_seconds,
             )
+
+            logger.info("TMS RATE RESPONSE STATUS: %s", response.status_code)
+            logger.info("TMS RATE RESPONSE BODY: %s", response.text)
+
             response.raise_for_status()
 
         except requests.RequestException as exc:
-            raise RuntimeError(f"TMS rate request failed: {exc}") from exc
+            response_text = ""
+            response_status = None
+            if getattr(exc, "response", None) is not None:
+                response_status = exc.response.status_code
+                response_text = exc.response.text
+
+            logger.exception(
+                "TMS rate request failed. status=%s body=%s",
+                response_status,
+                response_text,
+            )
+            raise RuntimeError(
+                f"TMS rate request failed: status={response_status}; body={response_text or str(exc)}"
+            ) from exc
 
         if response.status_code == 204 or not response.text or not response.text.strip():
             return {
@@ -109,7 +135,6 @@ class TMSClient:
         destination_code: str,
         shipment: Dict[str, Any],
     ) -> Dict[str, Any]:
-
         origin = self._get_origin(origin_mode)
         destination_zip = self._normalize_location_code(destination_code)
         destination_country = self._detect_country_from_code(destination_zip)
@@ -148,19 +173,32 @@ class TMSClient:
 
         total_weight = int(round(self._to_float(shipment.get("total_weight")) or 0))
 
+        destination_city = str(
+            shipment.get("destination_city")
+            or shipment.get("drop_city")
+            or "DropCity"
+        ).strip()
+
+        destination_state = str(
+            shipment.get("destination_state")
+            or shipment.get("destination_province")
+            or shipment.get("drop_state")
+            or "DropState"
+        ).strip()
+
         payload: Dict[str, Any] = {
             "Items": items,
             "PickupEvent": {
                 "Date": pickup_date_str,
-                "City": "PickCity",
-                "State": "PickState",
+                "City": origin["city"],
+                "State": origin["state"],
                 "Zip": origin["zip"],
                 "Country": origin["country"],
             },
             "DropEvent": {
                 "Date": drop_date_str,
-                "City": "DropCity",
-                "State": "DropState",
+                "City": destination_city,
+                "State": destination_state,
                 "Zip": destination_zip,
                 "Country": destination_country,
             },
