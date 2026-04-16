@@ -49,8 +49,8 @@ class TMSClient:
 
         url = f"{settings.tms_base_url}/api/v1/RateShop/RateRequest"
 
-        logger.info("TMS RATE REQUEST URL: %s", url)
-        logger.info("TMS RATE REQUEST PAYLOAD: %s", json.dumps(payload))
+        logger.warning("TMS RATE REQUEST URL: %s", url)
+        logger.warning("TMS RATE REQUEST PAYLOAD: %s", json.dumps(payload))
 
         try:
             response = requests.post(
@@ -64,8 +64,8 @@ class TMSClient:
                 timeout=settings.tms_timeout_seconds,
             )
 
-            logger.info("TMS RATE RESPONSE STATUS: %s", response.status_code)
-            logger.info("TMS RATE RESPONSE BODY: %s", response.text)
+            logger.warning("TMS RATE RESPONSE STATUS: %s", response.status_code)
+            logger.warning("TMS RATE RESPONSE BODY: %s", response.text)
 
             response.raise_for_status()
 
@@ -141,6 +141,8 @@ class TMSClient:
 
         now = datetime.now()
         pickup_dt = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        if pickup_dt <= now:
+            pickup_dt = pickup_dt + timedelta(days=1)
         drop_dt = pickup_dt + timedelta(days=1)
 
         pickup_date_str = pickup_dt.strftime("%m/%d/%Y %H:%M")
@@ -212,7 +214,9 @@ class TMSClient:
 
         if mode not in ORIGIN_MAP:
             allowed = ", ".join(ORIGIN_MAP.keys())
-            raise RuntimeError(f"Unsupported origin mode '{origin_mode}'. Allowed values: {allowed}")
+            raise RuntimeError(
+                f"Unsupported origin mode '{origin_mode}'. Allowed values: {allowed}"
+            )
 
         return ORIGIN_MAP[mode]
 
